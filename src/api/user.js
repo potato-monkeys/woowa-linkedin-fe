@@ -49,4 +49,8 @@ export const userApi = {
     const graph = await client.get('/api/graph');
     return graph.nodes || [];
   },
+
+  getAllUsers: () => {
+    return client.get('/api/users');
+  },
 };

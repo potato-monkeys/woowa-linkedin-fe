@@ -1,4 +1,7 @@
 import { formatAuthorization } from './auth.js';
+import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+//import.meta.env.VITE_API_BASE_URL || 'http://15.164.96.149';
+
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'http://15.164.96.149');
 

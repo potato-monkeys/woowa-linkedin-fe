@@ -47,6 +47,13 @@ export default function Navbar({
               홈
             </button>
             <button
+              className={`navbar-nav-btn ${activeTab === 'crews' ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => handleTabClick('crews')}
+            >
+              크루
+            </button>
+            <button
               className={`navbar-nav-btn ${activeTab === 'requests' ? 'is-active' : ''}`}
               type="button"
               onClick={() => handleTabClick('requests')}

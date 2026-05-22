@@ -329,6 +329,7 @@ export default function HomePage({ onNavigate }) {
   const [requests, setRequests] = useState([])
   const [selectedCrewId, setSelectedCrewId] = useState('tommy')
   const [toast, setToast] = useState('')
+  const [allUsers, setAllUsers] = useState([])
 
   // Message Inbox states
   const [rooms, setRooms] = useState([])
@@ -496,6 +497,16 @@ export default function HomePage({ onNavigate }) {
       }
     } catch (e) {
       console.warn('getRooms failed:', e)
+    }
+
+    // 7. Fetch All Users for crew list tab
+    try {
+      const users = await userApi.getAllUsers()
+      if (Array.isArray(users)) {
+        setAllUsers(users)
+      }
+    } catch (e) {
+      console.warn('getAllUsers failed:', e)
     }
   }
 
@@ -794,7 +805,84 @@ export default function HomePage({ onNavigate }) {
           </div>
         </header>
 
-        {activeTab === 'messages' ? (
+        {activeTab === 'crews' ? (
+          /* Crew List View */
+          <section style={{ maxWidth: '960px', margin: '0 auto', padding: '0 8px' }}>
+            <div style={{ marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: '700', color: '#1e293b', margin: '0 0 4px' }}>크루 목록</h2>
+              <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>쪽지를 보내고 싶은 크루를 선택하세요</p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
+              {allUsers
+                .filter((u) => String(u.id) !== String(user.id))
+                .map((crew) => (
+                  <div
+                    key={crew.id}
+                    style={{
+                      background: 'white',
+                      border: '1px solid #edf2f7',
+                      borderRadius: '16px',
+                      padding: '20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '50%',
+                        overflow: 'hidden',
+                        background: '#f1f5f9',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        fontSize: '22px',
+                      }}>
+                        {crew.profileImageUrl
+                          ? <img src={toPublicAssetUrl(crew.profileImageUrl)} alt={crew.nickname} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : '😊'
+                        }
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: '700', fontSize: '14px', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {crew.nickname}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {crew.introduction || '소개가 없습니다.'}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRequest(String(crew.id), '쪽지')}
+                      style={{
+                        width: '100%',
+                        padding: '8px 0',
+                        background: '#3ba776',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        fontSize: '13px',
+                      }}
+                    >
+                      쪽지 보내기
+                    </button>
+                  </div>
+                ))}
+              {allUsers.filter((u) => String(u.id) !== String(user.id)).length === 0 && (
+                <p style={{ color: '#94a3b8', fontSize: '14px', gridColumn: '1 / -1', textAlign: 'center', padding: '40px 0' }}>
+                  아직 등록된 크루가 없습니다.
+                </p>
+              )}
+            </div>
+          </section>
+        ) : activeTab === 'messages' ? (
           /* Messages Inbox View - Live Interactive Messenger Split View */
           <section className="inbox-view-container" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '20px', alignItems: 'start', maxWidth: '960px', margin: '0 auto' }}>
             {/* Left Column: Chat rooms list */}

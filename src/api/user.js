@@ -26,7 +26,7 @@ export const userApi = {
       payload.nickname = nickname;
     }
 
-    return client.patch('/api/users/me', payload);
+    return client.put('/api/users/me', payload);
   },
 
   uploadImage: (imageFile) => {

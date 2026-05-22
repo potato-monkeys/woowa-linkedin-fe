@@ -95,6 +95,75 @@ const getImageUrlFromPayload = (payload) => {
   return ''
 }
 
+const relationActionMeta = {
+  FOLLOW: { label: '팔로우', emoji: '👀' },
+  MESSAGE: { label: '쪽지', emoji: '💌' },
+  COFFEE: { label: '커피', emoji: '☕' },
+  MEAL: { label: '밥', emoji: '🍜' },
+  DRINK: { label: '술', emoji: '🍺' },
+}
+
+const normalizeRelationAction = (value, fallbackIndex = 0) => {
+  const fallbackActions = ['COFFEE', 'MEAL', 'MESSAGE', 'FOLLOW', 'DRINK']
+  const rawValue = typeof value === 'string' ? value.toUpperCase() : ''
+
+  if (rawValue.includes('FOLLOW')) return 'FOLLOW'
+  if (rawValue.includes('MESSAGE') || rawValue.includes('DM')) return 'MESSAGE'
+  if (rawValue.includes('COFFEE')) return 'COFFEE'
+  if (rawValue.includes('MEAL') || rawValue.includes('FOOD')) return 'MEAL'
+  if (rawValue.includes('DRINK') || rawValue.includes('ALCOHOL')) return 'DRINK'
+
+  return fallbackActions[fallbackIndex % fallbackActions.length]
+}
+
+const unwrapListResponse = (response) => {
+  if (Array.isArray(response)) return response
+  if (Array.isArray(response?.data)) return response.data
+  if (Array.isArray(response?.recommendations)) return response.recommendations
+  if (Array.isArray(response?.content)) return response.content
+  if (Array.isArray(response?.items)) return response.items
+  return []
+}
+
+const mapRecommendationToCrew = (recommendation, mappedCrews, index) => {
+  const source =
+    recommendation?.user ||
+    recommendation?.crew ||
+    recommendation?.targetUser ||
+    recommendation?.recommendedUser ||
+    recommendation ||
+    {}
+  const userId =
+    recommendation?.targetUserId ||
+    recommendation?.recommendedUserId ||
+    recommendation?.userId ||
+    source.userId ||
+    source.id
+
+  if (!userId) return null
+
+  const matchedCrew = mappedCrews.find((crew) => String(crew.id) === String(userId))
+  const relationAction = normalizeRelationAction(
+    recommendation?.relationAction ||
+      recommendation?.actionType ||
+      recommendation?.suggestedAction ||
+      recommendation?.activityType ||
+      recommendation?.activity,
+    index
+  )
+  const actionMeta = relationActionMeta[relationAction]
+
+  return {
+    ...(matchedCrew || mapCrewFromServer(source, index)),
+    id: String(userId),
+    relationAction,
+    actionLabel: actionMeta.label,
+    actionEmoji: actionMeta.emoji,
+    recommendationScore: recommendation?.score || recommendation?.weight || source.score || 0,
+    isServerRecommendation: true,
+  }
+}
+
 // --- HELPER MAPPERS FOR ROBUST API BINDINGS ---
 const mapCrewFromServer = (serverCrew, index) => {
   const tones = ['green', 'coral', 'blue', 'yellow']
@@ -386,31 +455,35 @@ export default function HomePage({ onNavigate }) {
     }
     setRequests(fetchedRequests.map(mapRequestFromServer))
 
-    // 5. Fetch Swipe Candidates if not completed
+    // 5. Fetch Swipe Candidates
     if (!isDailySwipeCompleted) {
-      let recommendations = []
+      let candidateCrews = []
+
       try {
         const response = await recommendationApi.getRecommendations()
-        if (Array.isArray(response)) {
-          recommendations = response
-        }
+        candidateCrews = unwrapListResponse(response)
+          .map((recommendation, index) => mapRecommendationToCrew(recommendation, mappedCrews, index))
+          .filter(Boolean)
+          .slice(0, 3)
       } catch (e) {
-        console.warn('getRecommendations failed:', e)
+        console.warn('getRecommendations failed, fallback to graph candidates:', e)
       }
-      
-      let candidateCrews = recommendations
-        .slice(0, 3)
-        .map((rec) => {
-          const fullCrew = mappedCrews.find((c) => String(c.id) === String(rec.userId))
-          if (fullCrew) {
-            return { ...fullCrew, score: rec.score }
-          }
-          return null
-        })
-        .filter(Boolean)
 
       if (candidateCrews.length === 0) {
-        candidateCrews = ['luna', 'pobi', 'hari'].map((id) => mappedCrews.find((c) => c.id === id)).filter(Boolean)
+        candidateCrews = mappedCrews
+          .filter((crew) => String(crew.id) !== String(me.id))
+          .slice(0, 3)
+          .map((crew, index) => {
+            const relationAction = normalizeRelationAction(null, index)
+            const actionMeta = relationActionMeta[relationAction]
+            return {
+              ...crew,
+              relationAction,
+              actionLabel: actionMeta.label,
+              actionEmoji: actionMeta.emoji,
+              isServerRecommendation: false,
+            }
+          })
       }
       setSwipeCandidates(candidateCrews)
     }
@@ -481,13 +554,21 @@ export default function HomePage({ onNavigate }) {
 
   // --- SWIPE EVENTS FROM OVERLAY ---
   const handleAcceptCrewFromSwipe = async (crew) => {
+    const relationAction = crew.relationAction || 'COFFEE'
+
+    if (!crew.isServerRecommendation) {
+      showToast(`${crew.name} 크루에게 ${crew.actionLabel || '커피'} 제안을 보냈어요.`)
+      return
+    }
+
     try {
       await swipeApi.createSwipe({
         targetUserId: crew.id,
         action: 'PROPOSE',
-        relationAction: 'COFFEE',
+        relationAction,
       })
-      showToast(`${crew.name} 크루에게 커피 약속 제안을 보냈어요!`)
+      const actionLabel = relationActionMeta[relationAction]?.label || crew.actionLabel || '활동'
+      showToast(`${crew.name} 크루에게 ${actionLabel} 제안을 보냈어요.`)
       // Refresh relations
       const rels = await relationApi.getRelations()
       if (Array.isArray(rels)) {
@@ -501,13 +582,20 @@ export default function HomePage({ onNavigate }) {
   }
 
   const handleRejectCrewFromSwipe = async (crew) => {
+    if (!crew.isServerRecommendation) {
+      showToast(`${crew.name} 크루를 넘겼어요.`)
+      return
+    }
+
     try {
       await swipeApi.createSwipe({
         targetUserId: crew.id,
         action: 'PASS',
       })
+      showToast(`${crew.name} 크루를 넘겼어요.`)
     } catch (e) {
       console.error(e)
+      showToast('거절 처리에 실패했습니다.')
     }
   }
 
@@ -530,14 +618,21 @@ export default function HomePage({ onNavigate }) {
 
   const handleSaveProfile = async (nextUser) => {
     try {
-      const updatedResponse = await userApi.updateMe({
-        bio: nextUser.bio,
-        introduction: nextUser.bio,
-      })
-      const mappedUser = normalizeUser(updatedResponse, {
+      const currentBio = user.bio || ''
+      const nextBio = typeof nextUser.bio === 'string' ? nextUser.bio : currentBio
+      const hasBioChanged = nextBio !== currentBio
+      const mappedUser = {
         ...user,
-        bio: nextUser.bio,
-      })
+        bio: nextBio,
+      }
+
+      if (hasBioChanged) {
+        const updatedResponse = await userApi.updateMe({
+          bio: nextBio,
+          introduction: nextBio,
+        })
+        Object.assign(mappedUser, normalizeUser(updatedResponse, mappedUser))
+      }
 
       if (nextUser.imageFile) {
         const uploadedResponse = await userApi.uploadImage(nextUser.imageFile)

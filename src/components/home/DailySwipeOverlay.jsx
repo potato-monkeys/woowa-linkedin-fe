@@ -51,6 +51,8 @@ export default function DailySwipeOverlay({ candidates = [], onAcceptCrew, onRej
   }
 
   if (!currentCrew) return null
+  const actionLabel = currentCrew.actionLabel || '커피'
+  const actionEmoji = currentCrew.actionEmoji || '☕'
 
   // Background style tone helper
   const getToneStyles = (tone) => {
@@ -74,7 +76,7 @@ export default function DailySwipeOverlay({ candidates = [], onAcceptCrew, onRej
     <div className="daily-swipe-overlay" role="dialog" aria-modal="true" aria-labelledby="swipe-title">
       <div className="swipe-header-area">
         <span className="swipe-badge">EVENT</span>
-        <h2 id="swipe-title">오늘의 크루 소개팅 💖</h2>
+        <h2 id="swipe-title">오늘의 크루 소개팅</h2>
         <p className="swipe-subtitle">
           매일 3명의 크루를 스와이프로 만나보세요!
           <br />
@@ -150,21 +152,28 @@ export default function DailySwipeOverlay({ candidates = [], onAcceptCrew, onRej
               <h3 className="swipe-crew-name">{currentCrew.name}</h3>
               <p className="swipe-crew-bio">{currentCrew.bio}</p>
 
+              <div className="swipe-proposal-chip" style={{ borderColor: toneStyle.border, color: toneStyle.border }}>
+                <span>{actionEmoji}</span>
+                <strong>{actionLabel} 제안</strong>
+              </div>
+
               {/* Note tip box */}
               <div className="swipe-crew-note">
                 <span className="note-emoji">💡</span>
-                <p className="note-text">{currentCrew.note}</p>
+                <p className="note-text">
+                  오른쪽으로 넘기면 {currentCrew.name} 크루에게 {actionLabel} 알림이 가요.
+                </p>
               </div>
             </div>
 
             <div className="swipe-action-hint">
-              ← 왼쪽으로 넘기면 거절 | 오른쪽으로 넘기면 수락 →
+              ← 거절 | {actionLabel} 제안 →
             </div>
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* Manual Action Buttons (X & Heart) */}
+      {/* Manual Action Buttons */}
       <div className="swipe-action-buttons">
         <button
           className="swipe-btn reject-btn"
@@ -182,10 +191,10 @@ export default function DailySwipeOverlay({ candidates = [], onAcceptCrew, onRej
           className="swipe-btn accept-btn"
           type="button"
           onClick={() => triggerButtonAction(true)}
-          aria-label="수락 (관계 연결)"
+          aria-label={`${actionLabel} 제안`}
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
           </svg>
         </button>
       </div>

@@ -1,14 +1,7 @@
 import { useState } from 'react'
 import { motion, useMotionValue, useTransform, AnimatePresence } from 'motion/react'
-import { crews } from '../../data/mockData.js'
 
-export default function DailySwipeOverlay({ onAcceptCrew, onComplete }) {
-  const candidates = [
-    crews.find((c) => c.id === 'luna'),
-    crews.find((c) => c.id === 'pobi'),
-    crews.find((c) => c.id === 'hari'),
-  ].filter(Boolean)
-
+export default function DailySwipeOverlay({ candidates = [], onAcceptCrew, onRejectCrew, onComplete }) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [exitDirection, setExitDirection] = useState(null) // 'left', 'right', or null
 
@@ -26,6 +19,8 @@ export default function DailySwipeOverlay({ onAcceptCrew, onComplete }) {
   const handleSwipe = (accepted) => {
     if (accepted) {
       onAcceptCrew(currentCrew)
+    } else {
+      onRejectCrew?.(currentCrew)
     }
 
     // Go to next card

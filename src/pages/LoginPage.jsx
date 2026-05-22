@@ -1,29 +1,47 @@
-import { useState } from 'react'
-import AuthShell from '../components/AuthShell.jsx'
+import { useState } from 'react';
+import AuthShell from '../components/AuthShell.jsx';
+import { userApi } from '../api/user.js';
 
 export default function LoginPage({ onNavigate }) {
-  const [error, setError] = useState('')
+  const [error, setError] = useState('');
 
-  const handleSubmit = (event) => {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const nickname = formData.get('nickname')?.trim()
-    const password = formData.get('password')?.trim()
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const nickname = formData.get('nickname')?.trim();
+    const password = formData.get('password')?.trim();
 
     if (!nickname || !password) {
-      setError('닉네임 또는 비밀번호를 확인해주세요.')
-      return
+      setError('닉네임 또는 비밀번호를 확인해주세요.');
+      return;
     }
 
-    window.localStorage.setItem(
-      'crewling-user',
-      JSON.stringify({
-        nickname,
-        bio: '함께 연결을 만들어가고 있어요',
-      }),
-    )
-    onNavigate('/app/home')
-  }
+    try {
+      const response = await userApi.login(nickname, password);
+      const token =
+        typeof response === 'string' ? response : response?.accessToken;
+
+      if (token) {
+        window.localStorage.setItem('crewling-token', token);
+      } else {
+        throw new Error('인증 토큰을 받을 수 없습니다.');
+      }
+
+      if (response && response.user) {
+        window.localStorage.setItem(
+          'crewling-user',
+          JSON.stringify(response.user),
+        );
+      }
+
+      onNavigate('/app/home');
+    } catch (err) {
+      setError(
+        err.message ||
+          '로그인에 실패했습니다. 닉네임과 비밀번호를 확인해주세요.',
+      );
+    }
+  };
 
   return (
     <AuthShell
@@ -63,5 +81,5 @@ export default function LoginPage({ onNavigate }) {
         {error}
       </p>
     </AuthShell>
-  )
+  );
 }

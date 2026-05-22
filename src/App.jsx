@@ -20,11 +20,21 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  const hasToken = !!window.localStorage.getItem('crewling-token');
+
+  useEffect(() => {
+    if (!hasToken && path.startsWith('/app')) {
+      navigate('/login');
+    } else if (hasToken && (path === '/login' || path === '/' || path === '')) {
+      navigate('/app/home');
+    }
+  }, [path, hasToken]);
+
   if (path === '/signup') {
     return <SignupPage onNavigate={navigate} />;
   }
 
-  if (path.startsWith('/app')) {
+  if (path.startsWith('/app') && hasToken) {
     return <HomePage onNavigate={navigate} />;
   }
 

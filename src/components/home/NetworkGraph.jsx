@@ -1,8 +1,8 @@
-import { crews } from '../../data/mockData.js'
 import CrewDetailsPopover from './CrewDetailsPopover.jsx'
 import NetworkGraphCanvas from './NetworkGraphCanvas.jsx'
 
 export default function NetworkGraph({
+  crews,
   relations,
   selectedCrewId,
   onSelectCrew,
@@ -14,6 +14,7 @@ export default function NetworkGraph({
     <section className="graph-panel force-graph-panel" aria-labelledby="graph-title">
       <div className="graph-container-relative" style={{ position: 'relative' }}>
         <NetworkGraphCanvas
+          crews={crews}
           relations={relations}
           selectedCrewId={selectedCrewId}
           onSelectCrew={onSelectCrew}

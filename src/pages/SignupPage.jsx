@@ -1,35 +1,57 @@
-import { useState } from 'react'
-import AuthShell from '../components/AuthShell.jsx'
+import { useState } from 'react';
+import AuthShell from '../components/AuthShell.jsx';
+import { userApi } from '../api/user.js';
 
 export default function SignupPage({ onNavigate }) {
-  const [error, setError] = useState('')
+  const [error, setError] = useState('');
 
-  const handleSubmit = (event) => {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const nickname = formData.get('nickname')?.trim()
-    const password = formData.get('password')?.trim()
-    const passwordConfirm = formData.get('passwordConfirm')?.trim()
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const nickname = formData.get('nickname')?.trim();
+    const password = formData.get('password')?.trim();
+    const passwordConfirm = formData.get('passwordConfirm')?.trim();
+    const bio = formData.get('bio')?.trim() || '함께 연결을 만들어가고 있어요';
 
     if (!nickname || !password) {
-      setError('닉네임 또는 비밀번호를 확인해주세요.')
-      return
+      setError('닉네임 또는 비밀번호를 확인해주세요.');
+      return;
     }
 
     if (password !== passwordConfirm) {
-      setError('비밀번호가 서로 달라요.')
-      return
+      setError('비밀번호가 서로 달라요.');
+      return;
     }
 
-    window.localStorage.setItem(
-      'crewling-user',
-      JSON.stringify({
-        nickname,
-        bio: formData.get('bio')?.trim() || '함께 연결을 만들어가고 있어요',
-      }),
-    )
-    onNavigate('/app/home')
-  }
+    try {
+      // 1. Signup
+      await userApi.signup(nickname, password, bio);
+
+      // 2. Automatic Login
+      const loginResponse = await userApi.login(nickname, password);
+      const token =
+        typeof loginResponse === 'string'
+          ? loginResponse
+          : loginResponse?.accessToken;
+
+      if (token) {
+        window.localStorage.setItem('crewling-token', token);
+      } else {
+        throw new Error('회원가입 후 인증 토큰을 받지 못했습니다.');
+      }
+
+      if (loginResponse && loginResponse.user) {
+        window.localStorage.setItem(
+          'crewling-user',
+          JSON.stringify(loginResponse.user),
+        );
+      }
+
+      onNavigate('/app/home');
+    } catch (err) {
+      setError(err.message || '회원가입 또는 자동 로그인에 실패했습니다.');
+    }
+  };
 
   return (
     <AuthShell
@@ -79,12 +101,17 @@ export default function SignupPage({ onNavigate }) {
 
       <label>
         <span>한 줄 소개</span>
-        <input name="bio" type="text" autoComplete="off" placeholder="예: 산책과 커피를 좋아해요" />
+        <input
+          name="bio"
+          type="text"
+          autoComplete="off"
+          placeholder="예: 산책과 커피를 좋아해요"
+        />
       </label>
 
       <p className="form-error" role="alert" aria-live="polite">
         {error}
       </p>
     </AuthShell>
-  )
+  );
 }

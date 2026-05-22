@@ -1,6 +1,4 @@
-import { crews } from '../../data/mockData.js'
-
-export default function RequestsPanel({ requests, onAccept, onReject }) {
+export default function RequestsPanel({ crews, requests, onAccept, onReject }) {
   const getActivityIcon = (activity) => {
     switch (activity) {
       case '커피':

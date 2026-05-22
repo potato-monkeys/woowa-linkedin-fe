@@ -1,9 +1,10 @@
 import { forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { GRAPH_HEIGHT, GRAPH_WIDTH, crews, relationColors, secondaryLinks } from '../../data/mockData.js'
+import { GRAPH_HEIGHT, GRAPH_WIDTH, relationColors, secondaryLinks } from '../../data/mockData.js'
 
 export default function NetworkGraphCanvas({
+  crews,
   relations,
   selectedCrewId,
   onSelectCrew,
@@ -41,18 +42,23 @@ export default function NetworkGraphCanvas({
         anchorY: (crew.y / 100) * GRAPH_HEIGHT,
       })),
     ]
+    const nodeIds = new Set(nodes.map((node) => node.id))
     const links = [
-      ...relations.map((relation) => ({
-        source: 'me',
-        target: relation.crewId,
-        type: relation.type,
-        weight: relation.weight,
-      })),
-      ...secondaryLinks,
+      ...relations
+        .filter((relation) => nodeIds.has(relation.crewId))
+        .map((relation) => ({
+          source: 'me',
+          target: relation.crewId,
+          type: relation.type,
+          weight: relation.weight,
+        })),
+      ...secondaryLinks.filter(
+        (link) => nodeIds.has(link.source) && nodeIds.has(link.target)
+      ),
     ]
 
     return { nodes, links }
-  }, [relations])
+  }, [relations, crews])
 
   useEffect(() => {
     let frameId = null

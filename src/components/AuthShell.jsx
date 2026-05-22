@@ -9,11 +9,39 @@ function BrandPanel() {
   return (
     <section className="brand-panel" aria-label="크루링 소개">
       <div className="logo-mark" aria-hidden="true">
-        <span className="logo-node logo-node-main" />
-        <span className="logo-node logo-node-a" />
-        <span className="logo-node logo-node-b" />
-        <span className="logo-line logo-line-a" />
-        <span className="logo-line logo-line-b" />
+        <svg
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        >
+          <line
+            x1="9"
+            y1="49"
+            x2="47"
+            y2="33"
+            stroke="var(--primary)"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+          />
+          <line
+            x1="47"
+            y1="33"
+            x2="81"
+            y2="11"
+            stroke="#b4c7be"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+          />
+        </svg>
+        <span className="logo-node logo-node-main" style={{ zIndex: 2 }} />
+        <span className="logo-node logo-node-a" style={{ zIndex: 2 }} />
+        <span className="logo-node logo-node-b" style={{ zIndex: 2 }} />
       </div>
 
       <p className="eyebrow">Warm Campus Network</p>
@@ -21,6 +49,40 @@ function BrandPanel() {
       <p className="brand-copy">우테코 생활 속 접점이 관계 지도로 이어지는 공간</p>
 
       <div className="mini-map" aria-hidden="true">
+        <svg
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 1,
+            opacity: 0.92,
+          }}
+        >
+          {demoProfiles.map((crew) => {
+            const colors = {
+              green: 'var(--primary)',
+              coral: 'var(--accent-coral)',
+              blue: 'var(--accent-blue)',
+              yellow: 'var(--accent-yellow)',
+            }
+            return (
+              <line
+                key={crew.name}
+                x1="50%"
+                y1="50%"
+                x2={`${crew.x}%`}
+                y2={`${crew.y}%`}
+                stroke={colors[crew.color]}
+                strokeWidth="8"
+                strokeLinecap="round"
+              />
+            )
+          })}
+        </svg>
+
         {demoProfiles.map((crew) => (
           <span
             className={`crew-dot crew-dot-${crew.color}`}
@@ -31,10 +93,6 @@ function BrandPanel() {
           </span>
         ))}
         <span className="me-dot">나</span>
-        <span className="map-line line-1" />
-        <span className="map-line line-2" />
-        <span className="map-line line-3" />
-        <span className="map-line line-4" />
       </div>
     </section>
   )

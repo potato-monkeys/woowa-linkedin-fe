@@ -1,5 +1,6 @@
-const BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'https://woowa-linkedin-be.onrender.com';
+import { formatAuthorization } from './auth.js';
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'http://15.164.96.149');
 
 async function request(endpoint, options = {}) {
   const token = window.localStorage.getItem('crewling-token');
@@ -8,7 +9,7 @@ async function request(endpoint, options = {}) {
   };
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    headers['Authorization'] = formatAuthorization(token);
   }
 
   let body = options.body;

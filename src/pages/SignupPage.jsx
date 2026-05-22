@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import AuthShell from '../components/AuthShell.jsx';
 import { userApi } from '../api/user.js';
+import { saveAuthToken } from '../api/auth.js';
 
 export default function SignupPage({ onNavigate }) {
   const [error, setError] = useState('');
@@ -29,14 +30,9 @@ export default function SignupPage({ onNavigate }) {
 
       // 2. Automatic Login
       const loginResponse = await userApi.login(nickname, password);
-      const token =
-        typeof loginResponse === 'string'
-          ? loginResponse
-          : loginResponse?.accessToken;
+      const token = saveAuthToken(loginResponse);
 
-      if (token) {
-        window.localStorage.setItem('crewling-token', token);
-      } else {
+      if (!token) {
         throw new Error('회원가입 후 인증 토큰을 받지 못했습니다.');
       }
 

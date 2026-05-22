@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import AuthShell from '../components/AuthShell.jsx';
 import { userApi } from '../api/user.js';
+import { saveAuthToken } from '../api/auth.js';
 
 export default function LoginPage({ onNavigate }) {
   const [error, setError] = useState('');
@@ -18,12 +19,9 @@ export default function LoginPage({ onNavigate }) {
 
     try {
       const response = await userApi.login(nickname, password);
-      const token =
-        typeof response === 'string' ? response : response?.accessToken;
+      const token = saveAuthToken(response);
 
-      if (token) {
-        window.localStorage.setItem('crewling-token', token);
-      } else {
+      if (!token) {
         throw new Error('인증 토큰을 받을 수 없습니다.');
       }
 

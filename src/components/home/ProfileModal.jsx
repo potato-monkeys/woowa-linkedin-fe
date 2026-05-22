@@ -1,10 +1,28 @@
+import { useEffect, useState } from 'react'
+
 export default function ProfileModal({ user, onClose, onSave }) {
+  const [imageFile, setImageFile] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(user.profileImageUrl || '')
+
+  useEffect(() => {
+    if (!imageFile) {
+      setPreviewUrl(user.profileImageUrl || '')
+      return undefined
+    }
+
+    const nextPreviewUrl = URL.createObjectURL(imageFile)
+    setPreviewUrl(nextPreviewUrl)
+
+    return () => URL.revokeObjectURL(nextPreviewUrl)
+  }, [imageFile, user.profileImageUrl])
+
   const handleSubmit = (event) => {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const nextUser = {
-      nickname: formData.get('nickname')?.trim() || user.nickname,
+      nickname: user.nickname,
       bio: formData.get('bio')?.trim() || user.bio,
+      imageFile,
     }
 
     onSave(nextUser)
@@ -30,9 +48,39 @@ export default function ProfileModal({ user, onClose, onSave }) {
         </div>
 
         <form className="profile-form" onSubmit={handleSubmit}>
+          <label className="profile-image-uploader">
+            <span>프로필 사진</span>
+            <div className="profile-image-row">
+              <div className="profile-image-preview">
+                {previewUrl ? (
+                  <img src={previewUrl} alt={`${user.nickname} 프로필 미리보기`} />
+                ) : (
+                  <span>{user.emoji || user.nickname?.slice(0, 1) || '😎'}</span>
+                )}
+              </div>
+              <div>
+                <strong>이미지 선택</strong>
+                <p>JPG, PNG 이미지를 업로드할 수 있어요.</p>
+                <input
+                  name="profileImage"
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  onChange={(event) => setImageFile(event.target.files?.[0] || null)}
+                />
+              </div>
+            </div>
+          </label>
+
           <label>
             <span>닉네임</span>
-            <input name="nickname" type="text" defaultValue={user.nickname} />
+            <input
+              className="readonly-input"
+              name="nickname"
+              type="text"
+              value={user.nickname}
+              readOnly
+              aria-readonly="true"
+            />
           </label>
           <label>
             <span>한 줄 소개</span>

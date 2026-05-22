@@ -3,9 +3,30 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GRAPH_HEIGHT, GRAPH_WIDTH, relationColors, secondaryLinks } from '../../data/mockData.js'
 
+const getLevelInfo = (level, weight) => {
+  const lvl = String(level || '').toUpperCase()
+  const score = Number(weight || 0)
+
+  if (lvl.includes('ALLIANCE') || lvl.includes('POTATO') || score >= 40) {
+    return { level: 'POTATO_ALLIANCE', label: '감자 동맹', color: '#e879f9', emoji: '🥔', bg: '#fae8ff' }
+  }
+  if (lvl.includes('VERY_CLOSE') || lvl.includes('CLOSE') || (score >= 20 && score < 40)) {
+    return { level: 'VERY_CLOSE', label: '꽤 친함', color: '#fb923c', emoji: '🍜', bg: '#fff4e6' }
+  }
+  if (lvl.includes('GETTING_CLOSER') || lvl.includes('CLOSER') || (score >= 10 && score < 20)) {
+    return { level: 'GETTING_CLOSER', label: '친해지는 중', color: '#3ba776', emoji: '☕', bg: '#eefbf3' }
+  }
+  if (lvl.includes('AWKWARD') || (score >= 4 && score < 10)) {
+    return { level: 'AWKWARD', label: '어색한 사이', color: '#60a5fa', emoji: '💬', bg: '#edf5ff' }
+  }
+  return { level: 'UNKNOWN', label: '모르는 사이', color: '#cbd5e1', emoji: '👀', bg: '#f1f5f9' }
+}
+
 export default function NetworkGraphCanvas({
   crews,
-  relations,
+  edges = [],
+  currentUserId,
+  searchQuery,
   selectedCrewId,
   onSelectCrew,
 }) {
@@ -21,44 +42,120 @@ export default function NetworkGraphCanvas({
   const [panStart, setPanStart] = useState(null)
 
   const graphData = useMemo(() => {
-    const nodes = [
-      {
-        id: 'me',
+    const myId = String(currentUserId || 'me')
+
+    // Normalize edges
+    const normalizedEdges = (edges || []).map(edge => ({
+      ...edge,
+      source: String(edge.source || ''),
+      target: String(edge.target || ''),
+      weight: Number(edge.weight || 1),
+    }))
+
+    // Find depth 1 neighbor IDs (nodes directly connected to me)
+    const depth1Set = new Set()
+    normalizedEdges.forEach(edge => {
+      if (edge.source === myId) {
+        depth1Set.add(edge.target)
+      } else if (edge.target === myId) {
+        depth1Set.add(edge.source)
+      }
+    })
+
+    // Find depth 2 neighbor IDs (nodes connected to depth 1, excluding me and depth 1)
+    const depth2Set = new Set()
+    normalizedEdges.forEach(edge => {
+      const s = edge.source
+      const t = edge.target
+      if (s !== myId && t !== myId) {
+        if (depth1Set.has(s) && !depth1Set.has(t)) {
+          depth2Set.add(t)
+        } else if (depth1Set.has(t) && !depth1Set.has(s)) {
+          depth2Set.add(s)
+        }
+      }
+    })
+
+    // Allowed nodes include me, depth 1, and depth 2
+    const allowedNodeIds = new Set([myId, ...depth1Set, ...depth2Set])
+
+    // Filter and map nodes
+    const filteredNodes = crews
+      .filter(crew => allowedNodeIds.has(String(crew.id)))
+      .map((crew, index) => {
+        const isMe = String(crew.id) === myId
+        const connectionsCount = normalizedEdges.filter(
+          edge => (edge.source === String(crew.id) || edge.target === String(crew.id)) &&
+                  allowedNodeIds.has(edge.source) && allowedNodeIds.has(edge.target)
+        ).length
+
+        // Spreading out around center as default position
+        const angle = (index * 2 * Math.PI) / 8
+        const defaultX = Math.round(50 + 30 * Math.cos(angle))
+        const defaultY = Math.round(50 + 30 * Math.sin(angle))
+        const rawX = crew.x !== undefined ? crew.x : defaultX
+        const rawY = crew.y !== undefined ? crew.y : defaultY
+
+        return {
+          ...crew,
+          id: String(crew.id),
+          isMe,
+          connections: connectionsCount,
+          x: isMe ? GRAPH_WIDTH * 0.5 : (rawX / 100) * GRAPH_WIDTH,
+          y: isMe ? GRAPH_HEIGHT * 0.55 : (rawY / 100) * GRAPH_HEIGHT,
+          anchorX: isMe ? GRAPH_WIDTH * 0.5 : (rawX / 100) * GRAPH_WIDTH,
+          anchorY: isMe ? GRAPH_HEIGHT * 0.55 : (rawY / 100) * GRAPH_HEIGHT,
+        }
+      })
+
+    // Prepend 'me' node if it's not already in the list
+    const hasMeNode = filteredNodes.some(n => n.isMe)
+    if (!hasMeNode) {
+      filteredNodes.unshift({
+        id: myId,
         name: '나',
         emoji: '😎',
         isMe: true,
-        connections: relations.length,
+        connections: depth1Set.size,
         x: GRAPH_WIDTH * 0.5,
         y: GRAPH_HEIGHT * 0.55,
         anchorX: GRAPH_WIDTH * 0.5,
         anchorY: GRAPH_HEIGHT * 0.55,
-      },
-      ...crews.map((crew) => ({
-        ...crew,
-        connections: relations.filter((relation) => relation.crewId === crew.id).length + 1,
-        x: (crew.x / 100) * GRAPH_WIDTH,
-        y: (crew.y / 100) * GRAPH_HEIGHT,
-        anchorX: (crew.x / 100) * GRAPH_WIDTH,
-        anchorY: (crew.y / 100) * GRAPH_HEIGHT,
-      })),
-    ]
-    const nodeIds = new Set(nodes.map((node) => node.id))
-    const links = [
-      ...relations
-        .filter((relation) => nodeIds.has(relation.crewId))
-        .map((relation) => ({
-          source: 'me',
-          target: relation.crewId,
-          type: relation.type,
-          weight: relation.weight,
-        })),
-      ...secondaryLinks.filter(
-        (link) => nodeIds.has(link.source) && nodeIds.has(link.target)
-      ),
-    ]
+      })
+    }
 
-    return { nodes, links }
-  }, [relations, crews])
+    // Filter and map links
+    const filteredLinks = normalizedEdges
+      .filter(edge => allowedNodeIds.has(edge.source) && allowedNodeIds.has(edge.target))
+      .map(edge => {
+        const isPrimary = edge.source === myId || edge.target === myId
+        return {
+          id: edge.id || `${edge.source}-${edge.target}`,
+          source: edge.source,
+          target: edge.target,
+          weight: edge.weight,
+          level: edge.level,
+          levelDescription: edge.levelDescription,
+          isPrimary,
+        }
+      })
+
+    // Apply search filter if query is present
+    let finalNodes = filteredNodes
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      finalNodes = filteredNodes.filter(
+        node => node.isMe || (node.name || '').toLowerCase().includes(query)
+      )
+    }
+
+    const finalNodeIds = new Set(finalNodes.map(n => n.id))
+    const finalLinks = filteredLinks.filter(
+      link => finalNodeIds.has(link.source) && finalNodeIds.has(link.target)
+    )
+
+    return { nodes: finalNodes, links: finalLinks }
+  }, [crews, edges, currentUserId, searchQuery])
 
   useEffect(() => {
     let frameId = null
@@ -74,7 +171,7 @@ export default function NetworkGraphCanvas({
         'link',
         forceLink(links)
           .id((node) => node.id)
-          .distance((link) => 124 - link.weight * 12)
+          .distance((link) => Math.max(48, 130 - link.weight * 1.5))
           .strength(0.22),
       )
       .force('charge', forceManyBody().strength(-240))
@@ -214,40 +311,35 @@ export default function NetworkGraphCanvas({
     })
   }
 
-  const handleWheel = (event) => {
-    event.preventDefault()
+  useEffect(() => {
     const svg = svgRef.current
     if (!svg) return
 
-    const rect = svg.getBoundingClientRect()
-    const pointerX = ((event.clientX - rect.left) / rect.width) * GRAPH_WIDTH
-    const pointerY = ((event.clientY - rect.top) / rect.height) * GRAPH_HEIGHT
-    const nextK = Math.min(2.2, Math.max(0.72, viewport.k * (event.deltaY > 0 ? 0.92 : 1.08)))
-    const graphX = (pointerX - viewport.x) / viewport.k
-    const graphY = (pointerY - viewport.y) / viewport.k
+    const handleWheel = (event) => {
+      event.preventDefault()
+      const rect = svg.getBoundingClientRect()
+      const pointerX = ((event.clientX - rect.left) / rect.width) * GRAPH_WIDTH
+      const pointerY = ((event.clientY - rect.top) / rect.height) * GRAPH_HEIGHT
 
-    setViewport({
-      k: nextK,
-      x: pointerX - graphX * nextK,
-      y: pointerY - graphY * nextK,
-    })
-  }
-  const getLinkBadge = (type) => {
-    switch (type) {
-      case 'coffee':
-        return { emoji: '☕', color: '#ff9f7a', bg: '#ffe9df' }
-      case 'meal':
-        return { emoji: '🍴', color: '#ffd66b', bg: '#fff4c7' }
-      case 'message':
-        return { emoji: '💬', color: '#3ba776', bg: '#dff4ea' }
-      case 'follow':
-        return { emoji: '👀', color: '#6ba8ff', bg: '#e4f0ff' }
-      case 'drink':
-        return { emoji: '🍺', color: '#e879f9', bg: '#ffe9df' }
-      default:
-        return null
+      setViewport((prevViewport) => {
+        const nextK = Math.min(2.2, Math.max(0.72, prevViewport.k * (event.deltaY > 0 ? 0.92 : 1.08)))
+        const graphX = (pointerX - prevViewport.x) / prevViewport.k
+        const graphY = (pointerY - prevViewport.y) / prevViewport.k
+
+        return {
+          k: nextK,
+          x: pointerX - graphX * nextK,
+          y: pointerY - graphY * nextK,
+        }
+      })
     }
-  }
+
+    svg.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      svg.removeEventListener('wheel', handleWheel)
+    }
+  }, [])
+  // getLinkBadge is removed as we now use getLevelInfo helper.
 
   return (
     <div className="graph-stage force-graph-stage">
@@ -261,7 +353,6 @@ export default function NetworkGraphCanvas({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        onWheel={handleWheel}
       >
         <defs>
           <filter id="cuteNodeShadow" x="-40%" y="-40%" width="180%" height="180%">
@@ -273,7 +364,8 @@ export default function NetworkGraphCanvas({
           {/* 1. Connection lines */}
           <g className="force-links">
             {graph.links.map((link, index) => {
-              const strokeColor = relationColors[link.type] || '#ccc'
+              const levelInfo = getLevelInfo(link.level, link.weight)
+              const thickness = Math.min(8, Math.max(2, link.weight * 0.15 + 1.5))
               return (
                 <motion.line
                   key={`${link.source.id}-${link.target.id}-${index}`}
@@ -281,10 +373,10 @@ export default function NetworkGraphCanvas({
                   y1={link.source.y}
                   x2={link.target.x}
                   y2={link.target.y}
-                  stroke={strokeColor}
-                  strokeWidth={Math.max(2, link.weight * 2)}
+                  stroke={levelInfo.color}
+                  strokeWidth={thickness}
                   strokeLinecap="round"
-                  strokeDasharray={link.type === 'follow' ? '5 5' : '0'}
+                  strokeDasharray={levelInfo.level === 'UNKNOWN' ? '5 5' : '0'}
                   initial={{ pathLength: 0, opacity: 0 }}
                   animate={{ pathLength: 1, opacity: 0.75 }}
                   transition={{ duration: 0.5 }}
@@ -296,27 +388,49 @@ export default function NetworkGraphCanvas({
           {/* 2. Connection midpoint badges */}
           <g className="force-badges">
             {graph.links.map((link, index) => {
-              const badge = getLinkBadge(link.type)
-              if (!badge || typeof link.source.x !== 'number' || typeof link.target.x !== 'number') return null
+              const levelInfo = getLevelInfo(link.level, link.weight)
+              if (typeof link.source.x !== 'number' || typeof link.target.x !== 'number') return null
               const midX = (link.source.x + link.target.x) / 2
               const midY = (link.source.y + link.target.y) / 2
               return (
                 <g key={`badge-${link.source.id}-${link.target.id}-${index}`} transform={`translate(${midX} ${midY})`}>
                   <circle
-                    r="10"
+                    r="11"
                     fill="#ffffff"
-                    stroke={badge.color}
-                    strokeWidth="1.5"
-                    style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.06))' }}
+                    stroke={levelInfo.color}
+                    strokeWidth="2"
+                    style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.08))' }}
                   />
                   <text
-                    fontSize="9"
+                    fontSize="11"
                     textAnchor="middle"
                     dominantBaseline="central"
                     y="0.5"
                   >
-                    {badge.emoji}
+                    {levelInfo.emoji}
                   </text>
+                  {/* Small badge showing numerical score */}
+                  <g transform="translate(9, -9)">
+                    <rect
+                      x="-8"
+                      y="-6"
+                      width="16"
+                      height="11"
+                      rx="3"
+                      fill="#333333"
+                      opacity="0.8"
+                    />
+                    <text
+                      fill="#ffffff"
+                      fontSize="7"
+                      fontWeight="bold"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      y="-0.5"
+                    >
+                      {link.weight}
+                    </text>
+                  </g>
                 </g>
               )
             })}

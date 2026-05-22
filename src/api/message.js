@@ -4,14 +4,14 @@ export const messageApi = {
   sendMessage: ({ receiverId, content }) => {
     // Standard payload is { receiverId, content } or { userId, content }.
     // Let's send both or format as receiverId, matching the specification.
-    return client.post('/api/messages', { receiverId, content })
+    return client.post('/messages', { receiverId, content })
   },
 
   getRooms: () => {
-    return client.get('/api/messages/rooms')
+    return client.get('/messages/rooms')
   },
 
   getMessages: (userId) => {
-    return client.get(`/api/messages/${userId}`)
+    return client.get(`/messages/${userId}`)
   },
 }

@@ -9,6 +9,7 @@ import RequestsPanel from '../components/home/RequestsPanel.jsx'
 import StatsPanel from '../components/home/StatsPanel.jsx'
 
 import { userApi } from '../api/user.js'
+import { clearAuth } from '../api/auth.js'
 import { relationApi } from '../api/relation.js'
 import { recommendationApi } from '../api/recommendation.js'
 import { swipeApi } from '../api/swipe.js'
@@ -20,7 +21,79 @@ import {
   currentUserFallback,
   initialRelations as mockRelations,
   initialRequests as mockRequests,
+  secondaryLinks,
 } from '../data/mockData.js'
+
+const API_ASSET_ORIGIN = (() => {
+  const configuredBaseUrl = import.meta.env.VITE_ASSET_BASE_URL || import.meta.env.VITE_API_BASE_URL
+
+  if (!configuredBaseUrl) {
+    return 'http://15.164.96.149'
+  }
+
+  try {
+    return new URL(configuredBaseUrl).origin
+  } catch {
+    return configuredBaseUrl.replace(/\/+$/, '')
+  }
+})()
+
+const toPublicAssetUrl = (value) => {
+  if (!value || typeof value !== 'string') return value
+
+  const trimmed = value.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+
+  if (trimmed.startsWith('//')) {
+    return `${window.location.protocol}${trimmed}`
+  }
+
+  return `${API_ASSET_ORIGIN}${trimmed.startsWith('/') ? trimmed : `/${trimmed}`}`
+}
+
+const getImageUrlFromPayload = (payload) => {
+  if (!payload) return ''
+  if (typeof payload === 'string') return toPublicAssetUrl(payload)
+
+  const candidateFields = [
+    payload.profileImageUrl,
+    payload.profileImage,
+    payload.profileImagePath,
+    payload.imageUrl,
+    payload.image,
+    payload.avatar,
+    payload.fileUrl,
+    payload.filePath,
+    payload.path,
+    payload.location,
+    payload.url,
+  ]
+
+  for (const candidate of candidateFields) {
+    if (!candidate) continue
+    const normalizedCandidate = getImageUrlFromPayload(candidate)
+    if (normalizedCandidate) return normalizedCandidate
+  }
+
+  if (payload.data) {
+    const dataImageUrl = getImageUrlFromPayload(payload.data)
+    if (dataImageUrl) return dataImageUrl
+  }
+
+  if (payload.user) {
+    const userImageUrl = getImageUrlFromPayload(payload.user)
+    if (userImageUrl) return userImageUrl
+  }
+
+  return ''
+}
 
 // --- HELPER MAPPERS FOR ROBUST API BINDINGS ---
 const mapCrewFromServer = (serverCrew, index) => {
@@ -48,9 +121,29 @@ const mapCrewFromServer = (serverCrew, index) => {
   }
 }
 
-const mapRelationFromServer = (serverRel) => {
-  const activityTypes = ['follow', 'message', 'coffee', 'meal', 'drink']
-  const type = serverRel.type?.toLowerCase() || 'message'
+const mapLevelToType = (level) => {
+  if (!level) return 'message'
+  const lvl = level.toUpperCase()
+  if (lvl.includes('ALLIANCE') || lvl.includes('POTATO')) return 'drink'
+  if (lvl.includes('CLOSE')) return 'meal'
+  if (lvl.includes('CLOSER') || lvl.includes('GETTING')) return 'coffee'
+  if (lvl.includes('AWKWARD')) return 'message'
+  return 'follow'
+}
+
+const mapRelationFromServer = (serverRel, currentUserId) => {
+  const partnerId = String(serverRel.userAId) === String(currentUserId)
+    ? serverRel.userBId
+    : serverRel.userAId
+
+  const lastAction = Array.isArray(serverRel.performedActions) && serverRel.performedActions.length > 0
+    ? serverRel.performedActions[serverRel.performedActions.length - 1]
+    : null
+
+  const type = lastAction 
+    ? lastAction.toLowerCase() 
+    : (serverRel.level ? mapLevelToType(serverRel.level) : 'message')
+
   const activityMap = {
     follow: '팔로우',
     message: '쪽지',
@@ -67,7 +160,7 @@ const mapRelationFromServer = (serverRel) => {
   }
 
   return {
-    crewId: serverRel.crewId || serverRel.targetId || serverRel.partnerId || '',
+    crewId: String(partnerId || serverRel.crewId || serverRel.targetId || ''),
     weight: serverRel.weight || 1,
     activity: serverRel.activity || activityMap[type] || '쪽지',
     tone: serverRel.tone || toneMap[type] || 'blue',
@@ -84,7 +177,7 @@ const mapRequestFromServer = (serverReq) => {
     DRINK: '술',
   }
 
-  const rawActivity = serverReq.activity || serverReq.activityType || 'COFFEE'
+  const rawActivity = serverReq.action || serverReq.activity || serverReq.activityType || 'COFFEE'
   const activity = activityMap[rawActivity] || rawActivity
 
   return {
@@ -137,10 +230,32 @@ function formatTime(dateStr) {
   }
 }
 
+const normalizeUser = (payload, fallback = currentUserFallback) => {
+  if (typeof payload === 'string') {
+    return {
+      ...fallback,
+      profileImageUrl: getImageUrlFromPayload(payload),
+    }
+  }
+
+  const source = payload?.user || payload?.data || payload || {}
+  const profileImageUrl = getImageUrlFromPayload(payload) || getImageUrlFromPayload(source)
+
+  return {
+    ...fallback,
+    id: source.id || source.userId || fallback.id,
+    nickname: source.nickname || source.name || fallback.nickname || '해나',
+    bio: source.introduction || source.bio || fallback.bio || '프론트엔드와 커피 산책을 좋아해요',
+    emoji: source.emoji || fallback.emoji || '😎',
+    profileImageUrl: profileImageUrl || fallback.profileImageUrl,
+  }
+}
+
 export default function HomePage({ onNavigate }) {
   const [user, setUser] = useState(currentUserFallback)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [crewsList, setCrewsList] = useState([])
+  const [graphEdges, setGraphEdges] = useState([])
   const [relations, setRelations] = useState([])
   const [requests, setRequests] = useState([])
   const [selectedCrewId, setSelectedCrewId] = useState('tommy')
@@ -170,17 +285,28 @@ export default function HomePage({ onNavigate }) {
     setIsDailySwipeCompleted(true)
   }
 
+  const refreshGraph = async () => {
+    try {
+      const graphData = await relationApi.getGraph()
+      if (graphData) {
+        const mappedCrews = (graphData.nodes || []).map((c, idx) => mapCrewFromServer(c, idx))
+        setCrewsList(mappedCrews)
+        setGraphEdges(graphData.edges || [])
+      }
+    } catch (e) {
+      console.warn('refreshGraph failed:', e)
+    }
+  }
+
   // --- API DATA FETCHING ---
   const refreshAllData = async () => {
+    let me
     try {
       // 1. Fetch Profile
-      const me = await userApi.getMe()
-      setUser({
-        id: me.id || me.userId || 'me',
-        nickname: me.nickname || me.name || '해나',
-        bio: me.introduction || me.bio || '프론트엔드와 커피 산책을 좋아해요',
-        emoji: me.emoji || '😎',
-      })
+      me = await userApi.getMe()
+      const mappedMe = normalizeUser(me, currentUserFallback)
+      me = mappedMe
+      setUser(mappedMe)
     } catch (e) {
       console.error('Failed to load user profile, redirecting to login:', e)
       window.localStorage.removeItem('crewling-token')
@@ -188,21 +314,47 @@ export default function HomePage({ onNavigate }) {
       return
     }
 
-    // 2. Fetch all crews
+    // 2. Fetch all graph nodes and edges
     let allCrews = []
+    let allEdges = []
     try {
-      const response = await userApi.getCrews()
-      if (Array.isArray(response)) {
-        allCrews = response
+      const graphData = await relationApi.getGraph()
+      if (graphData) {
+        allCrews = graphData.nodes || []
+        allEdges = graphData.edges || []
       }
     } catch (e) {
-      console.warn('getCrews failed, fallback to mock:', e)
+      console.warn('getGraph failed, fallback to mock:', e)
     }
     if (allCrews.length === 0) {
       allCrews = mockCrews
     }
     const mappedCrews = allCrews.map((c, idx) => mapCrewFromServer(c, idx))
     setCrewsList(mappedCrews)
+
+    if (allEdges.length === 0) {
+      const mockEdges = [
+        ...mockRelations.map((r) => ({
+          id: `me-${r.crewId}`,
+          source: 'me',
+          target: r.crewId,
+          weight: r.weight,
+          level: r.type === 'coffee' ? 'GETTING_CLOSER' : r.type === 'drink' ? 'POTATO_ALLIANCE' : r.type === 'meal' ? 'VERY_CLOSE' : r.type === 'message' ? 'AWKWARD' : 'UNKNOWN',
+          levelDescription: r.activity,
+        })),
+        ...secondaryLinks.map((l, index) => ({
+          id: `sec-${index}`,
+          source: l.source,
+          target: l.target,
+          weight: l.weight,
+          level: l.type === 'coffee' ? 'GETTING_CLOSER' : l.type === 'drink' ? 'POTATO_ALLIANCE' : l.type === 'meal' ? 'VERY_CLOSE' : l.type === 'message' ? 'AWKWARD' : 'UNKNOWN',
+          levelDescription: l.type === 'coffee' ? '커피' : l.type === 'drink' ? '술' : l.type === 'meal' ? '밥' : l.type === 'message' ? '쪽지' : '팔로우',
+        }))
+      ]
+      setGraphEdges(mockEdges)
+    } else {
+      setGraphEdges(allEdges)
+    }
 
     // 3. Fetch Relations
     let fetchedRelations = []
@@ -217,7 +369,7 @@ export default function HomePage({ onNavigate }) {
     if (fetchedRelations.length === 0) {
       fetchedRelations = mockRelations
     }
-    setRelations(fetchedRelations.map((r) => mapRelationFromServer(r)))
+    setRelations(fetchedRelations.map((r) => mapRelationFromServer(r, me.id)))
 
     // 4. Fetch Requests
     let fetchedRequests = []
@@ -246,7 +398,17 @@ export default function HomePage({ onNavigate }) {
         console.warn('getRecommendations failed:', e)
       }
       
-      let candidateCrews = recommendations.slice(0, 3).map((r, idx) => mapCrewFromServer(r, idx))
+      let candidateCrews = recommendations
+        .slice(0, 3)
+        .map((rec) => {
+          const fullCrew = mappedCrews.find((c) => String(c.id) === String(rec.userId))
+          if (fullCrew) {
+            return { ...fullCrew, score: rec.score }
+          }
+          return null
+        })
+        .filter(Boolean)
+
       if (candidateCrews.length === 0) {
         candidateCrews = ['luna', 'pobi', 'hari'].map((id) => mappedCrews.find((c) => c.id === id)).filter(Boolean)
       }
@@ -308,8 +470,9 @@ export default function HomePage({ onNavigate }) {
       // Reload relations because messaging adds MESSAGE(2점) weight
       const rels = await relationApi.getRelations()
       if (Array.isArray(rels)) {
-        setRelations(rels.map((r) => mapRelationFromServer(r)))
+        setRelations(rels.map((r) => mapRelationFromServer(r, user.id)))
       }
+      await refreshGraph()
     } catch (e) {
       console.error(e)
       showToast('쪽지 발송에 실패했습니다.')
@@ -320,16 +483,17 @@ export default function HomePage({ onNavigate }) {
   const handleAcceptCrewFromSwipe = async (crew) => {
     try {
       await swipeApi.createSwipe({
-        targetId: crew.id,
+        targetUserId: crew.id,
         action: 'PROPOSE',
-        activityType: 'COFFEE',
+        relationAction: 'COFFEE',
       })
       showToast(`${crew.name} 크루에게 커피 약속 제안을 보냈어요!`)
       // Refresh relations
       const rels = await relationApi.getRelations()
       if (Array.isArray(rels)) {
-        setRelations(rels.map((r) => mapRelationFromServer(r)))
+        setRelations(rels.map((r) => mapRelationFromServer(r, user.id)))
       }
+      await refreshGraph()
     } catch (e) {
       console.error(e)
       showToast('약속 제안 전송에 실패했습니다.')
@@ -339,7 +503,7 @@ export default function HomePage({ onNavigate }) {
   const handleRejectCrewFromSwipe = async (crew) => {
     try {
       await swipeApi.createSwipe({
-        targetId: crew.id,
+        targetUserId: crew.id,
         action: 'PASS',
       })
     } catch (e) {
@@ -366,15 +530,29 @@ export default function HomePage({ onNavigate }) {
 
   const handleSaveProfile = async (nextUser) => {
     try {
-      const updated = await userApi.updateMe({
-        nickname: nextUser.nickname,
+      const updatedResponse = await userApi.updateMe({
+        bio: nextUser.bio,
         introduction: nextUser.bio,
       })
+      const mappedUser = normalizeUser(updatedResponse, {
+        ...user,
+        bio: nextUser.bio,
+      })
 
-      const mappedUser = {
-        nickname: updated.nickname || nextUser.nickname,
-        bio: updated.introduction || updated.bio || nextUser.bio,
-        emoji: updated.emoji || user.emoji || '😎',
+      if (nextUser.imageFile) {
+        const uploadedResponse = await userApi.uploadImage(nextUser.imageFile)
+        const uploadedUser = normalizeUser(uploadedResponse, mappedUser)
+        mappedUser.profileImageUrl =
+          uploadedUser.profileImageUrl ||
+          getImageUrlFromPayload(uploadedResponse) ||
+          mappedUser.profileImageUrl
+
+        try {
+          const refreshedMe = await userApi.getMe()
+          Object.assign(mappedUser, normalizeUser(refreshedMe, mappedUser))
+        } catch (refreshError) {
+          console.warn('Failed to refresh profile after image upload:', refreshError)
+        }
       }
 
       setUser(mappedUser)
@@ -383,6 +561,11 @@ export default function HomePage({ onNavigate }) {
       showToast('프로필을 저장했어요.')
     } catch (e) {
       console.error(e)
+      if (e.status === 401) {
+        clearAuth()
+        onNavigate('/login')
+        return
+      }
       showToast('프로필 수정에 실패했습니다.')
     }
   }
@@ -400,10 +583,10 @@ export default function HomePage({ onNavigate }) {
         밥: 'MEAL',
         술: 'DRINK',
       }
-      await swipeApi.createSwipe({
-        targetId: crewId,
-        action: 'PROPOSE',
-        activityType: typeMap[activity] || 'COFFEE',
+      await relationApi.createActionRequest({
+        requesterId: user.id,
+        receiverId: crewId,
+        actionType: typeMap[activity] || 'COFFEE',
       })
       const crewName = crewsList.find((c) => c.id === crewId)?.name || '크루'
       showToast(`${crewName}에게 ${activity} 요청을 보냈어요.`)
@@ -411,8 +594,9 @@ export default function HomePage({ onNavigate }) {
       // Refresh requests and relations
       const rels = await relationApi.getRelations()
       if (Array.isArray(rels)) {
-        setRelations(rels.map((r) => mapRelationFromServer(r)))
+        setRelations(rels.map((r) => mapRelationFromServer(r, user.id)))
       }
+      await refreshGraph()
     } catch (e) {
       console.error(e)
       showToast('요청 발송에 실패했습니다.')
@@ -429,7 +613,10 @@ export default function HomePage({ onNavigate }) {
       
       // Reload relations
       const rels = await relationApi.getRelations()
-      setRelations(rels.map((r) => mapRelationFromServer(r)))
+      if (Array.isArray(rels)) {
+        setRelations(rels.map((r) => mapRelationFromServer(r, user.id)))
+      }
+      await refreshGraph()
       
       const crew = crewsList.find((item) => item.id === request.crewId)
       showToast(`${crew?.name || '크루'}와 ${request.activity} 연결이 반영됐어요.`)
@@ -714,7 +901,9 @@ export default function HomePage({ onNavigate }) {
               <div className="dashboard-stage-area">
                 <NetworkGraph
                   crews={crewsList}
-                  relations={filteredRelations}
+                  edges={graphEdges}
+                  currentUserId={user.id}
+                  searchQuery={searchQuery}
                   selectedCrewId={selectedCrewId}
                   onSelectCrew={setSelectedCrewId}
                   onRequest={handleRequest}

@@ -93,7 +93,11 @@ export default function Navbar({
               onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
             >
               <div className="navbar-avatar">
-                {user.emoji || '😎'}
+                {user.profileImageUrl ? (
+                  <img src={user.profileImageUrl} alt={`${user.nickname || '내'} 프로필`} />
+                ) : (
+                  user.emoji || '😎'
+                )}
               </div>
               <span className="navbar-nickname">{user.nickname || '해나'}</span>
               <svg
